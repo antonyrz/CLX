@@ -4,7 +4,7 @@ import re
 import requests
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext, simpledialog
-from datetime import datetime
+from datetime import datetime, timedelta
 import threading
 import pytesseract
 from pdf2image import convert_from_path
@@ -97,12 +97,19 @@ class PDFOrganizerApp:
                                  relief='flat', padx=15, pady=10)
         btn_organizar.grid(row=0, column=2, padx=5, pady=5)
         
+        btn_crear_lista_trello = tk.Button(button_frame, text="📅 Crear Lista Semanal Trello", 
+                                          command=self.crear_lista_semanal_trello_thread,
+                                          bg=COLOR_BOTONES, fg=COLOR_TEXTO,
+                                          font=('Arial', 10, 'bold'),
+                                          relief='flat', padx=15, pady=10)
+        btn_crear_lista_trello.grid(row=0, column=3, padx=5, pady=5)
+        
         btn_limpiar = tk.Button(button_frame, text="🧹 Limpiar Consola", 
                                command=self.limpiar_consola,
                                bg=COLOR_BOTONES, fg=COLOR_TEXTO,
                                font=('Arial', 10, 'bold'),
                                relief='flat', padx=15, pady=10)
-        btn_limpiar.grid(row=0, column=3, padx=5, pady=5)
+        btn_limpiar.grid(row=0, column=4, padx=5, pady=5)
         
         # Área de consola
         console_frame = ttk.Frame(main_frame)
@@ -133,6 +140,7 @@ class PDFOrganizerApp:
         self.setup_button_hover(btn_renombrar)
         self.setup_button_hover(btn_crear_carpetas)
         self.setup_button_hover(btn_organizar)
+        self.setup_button_hover(btn_crear_lista_trello)
         self.setup_button_hover(btn_limpiar)
         
     def setup_button_hover(self, button):
@@ -263,6 +271,24 @@ class PDFOrganizerApp:
                 self.status_var.set("Organización completada")
                 
         threading.Thread(target=run_organizar, daemon=True).start()
+        
+    def crear_lista_semanal_trello_thread(self):
+        """Ejecuta la creación de la lista semanal de Trello en un hilo separado"""
+        def run_crear_lista():
+            self.start_progress()
+            self.status_var.set("Creando lista semanal en Trello...")
+            try:
+                self.crear_lista_semanal_trello()
+                self.log("✅ Lista semanal de Trello creada exitosamente!")
+                messagebox.showinfo("Éxito", "Lista semanal de Trello creada correctamente")
+            except Exception as e:
+                self.log(f"❌ Error durante la creación de la lista: {str(e)}")
+                messagebox.showerror("Error", f"Error durante la creación de la lista: {str(e)}")
+            finally:
+                self.stop_progress()
+                self.status_var.set("Creación de lista completada")
+                
+        threading.Thread(target=run_crear_lista, daemon=True).start()
 
     # ================= FUNCIONES DE RENOMBRADO =================
     def extraer_texto_de_pdf_escaneado(self, pdf_path):
@@ -441,7 +467,7 @@ class PDFOrganizerApp:
                         
                         if fecha_inicio <= fecha <= fecha_fin:
                             return os.path.join(ruta_base, item)
-                    except:
+                    except (ValueError, IndexError):
                         continue
         return None
 
@@ -796,6 +822,113 @@ class PDFOrganizerApp:
                 
             except Exception as e:
                 self.log(f"  ❌ Error procesando {archivo}: {str(e)}")
+
+    # ================= FUNCIONES PARA CREAR LISTA SEMANAL EN TRELLO =================
+    def obtener_lunes_semana_actual(self):
+        """Obtiene la fecha del lunes de la semana actual"""
+        hoy = datetime.now()
+        # Si hoy es lunes, devolvemos hoy, sino calculamos el lunes anterior
+        return hoy - timedelta(days=hoy.weekday())
+
+    def crear_lista_trello(self, id_tablero, nombre_lista):
+        """Crea una lista en Trello"""
+        url = "https://api.trello.com/1/lists"
+        query = {
+            'name': nombre_lista,
+            'idBoard': id_tablero,
+            'key': TRELLO_API_KEY,
+            'token': TRELLO_TOKEN
+        }
+        response = requests.post(url, params=query)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            self.log(f"Error al crear lista: {response.text}")
+            return None
+
+    def crear_tarjeta_trello(self, id_lista, nombre_tarjeta):
+        """Crea una tarjeta en Trello"""
+        url = "https://api.trello.com/1/cards"
+        query = {
+            'idList': id_lista,
+            'name': nombre_tarjeta,
+            'key': TRELLO_API_KEY,
+            'token': TRELLO_TOKEN
+        }
+        response = requests.post(url, params=query)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            self.log(f"Error al crear tarjeta: {response.text}")
+            return None
+
+    def crear_checklist_tarjeta(self, id_tarjeta, nombre_checklist):
+        """Crea un checklist en una tarjeta de Trello"""
+        url = "https://api.trello.com/1/checklists"
+        query = {
+            'idCard': id_tarjeta,
+            'name': nombre_checklist,
+            'key': TRELLO_API_KEY,
+            'token': TRELLO_TOKEN
+        }
+        response = requests.post(url, params=query)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            self.log(f"Error al crear checklist: {response.text}")
+            return None
+
+    def crear_lista_semanal_trello(self):
+        """Crea la lista semanal en Trello con las tarjetas de cada día"""
+        # Obtener el lunes de esta semana
+        lunes = self.obtener_lunes_semana_actual()
+        viernes = lunes + timedelta(days=4)
+
+        # Formatear el nombre de la lista
+        nombre_lista = f"SEMANA DEL {lunes.strftime('%d %m')} AL {viernes.strftime('%d %m %Y')}"
+
+        # Obtener el ID del tablero
+        tablero_id = self.obtener_id_tablero_por_nombre(NOMBRE_TABLERO_TRELLO)
+        if not tablero_id:
+            self.log("❌ No se pudo obtener el ID del tablero")
+            return
+
+        # Verificar si la lista ya existe
+        listas = self.obtener_listas_tablero(tablero_id)
+        for lista in listas:
+            if lista['name'] == nombre_lista:
+                self.log("✅ La lista de esta semana ya existe")
+                return
+
+        # Crear la lista
+        nueva_lista = self.crear_lista_trello(tablero_id, nombre_lista)
+        if not nueva_lista:
+            self.log("❌ Error al crear la lista")
+            return
+
+        lista_id = nueva_lista['id']
+        self.log(f"✅ Lista creada: {nombre_lista}")
+
+        # Nombres de los días en español
+        nombres_dias = ["LUNES", "MARTES", "MIÉRCOLES", "JUEVES", "VIERNES"]
+
+        # Crear una tarjeta para cada día de lunes a viernes
+        for i in range(5):
+            fecha = lunes + timedelta(days=i)
+            nombre_tarjeta = f"{fecha.strftime('%d')} {nombres_dias[i]}"
+            
+            # Crear la tarjeta
+            tarjeta = self.crear_tarjeta_trello(lista_id, nombre_tarjeta)
+            if not tarjeta:
+                self.log(f"❌ Error al crear la tarjeta para {nombre_tarjeta}")
+                continue
+
+            # Crear el checklist "despachos" en la tarjeta
+            checklist = self.crear_checklist_tarjeta(tarjeta['id'], "despachos")
+            if checklist:
+                self.log(f"✅ Tarjeta y checklist creados: {nombre_tarjeta}")
+            else:
+                self.log(f"✅ Tarjeta creada pero sin checklist: {nombre_tarjeta}")
 
 # ================= INICIO DE LA APLICACIÓN =================
 if __name__ == "__main__":
