@@ -1,0 +1,104 @@
+// Función mejorada para extraer datos de despachos de AppSheet
+const extraerDespachos = () => {
+    try {
+        // Selectores para los datos
+        const tiendas = document.querySelectorAll('[data-testonly-column="ID Destino"] span');
+        const choferes = document.querySelectorAll('[data-testonly-column="NOMBRE CHOFER"] span');
+        
+        // Verificar que tenemos datos
+        if (tiendas.length === 0 || choferes.length === 0) {
+            console.error('No se encontraron datos. Verifica los selectores.');
+            return [];
+        }
+        
+        // Verificar que coincida la cantidad de elementos
+        if (tiendas.length !== choferes.length) {
+            console.warn(`Advertencia: Se encontraron ${tiendas.length} tiendas pero ${choferes.length} choferes`);
+        }
+        
+        const cantidad = Math.min(tiendas.length, choferes.length);
+        const despachos = [];
+        
+        console.log(`Se encontraron ${cantidad} despachos:`);
+        console.log('='.repeat(50));
+        
+        // Procesar cada despacho
+        for (let i = 0; i < cantidad; i++) {
+            const tienda = tiendas[i].textContent.trim();
+            const chofer = choferes[i].textContent.trim().toUpperCase();
+            
+            // Crear formato "MM MARACAY - JOSE PEREZ"
+            const formatoDeseado = `${tienda} - ${chofer}`;
+            despachos.push(formatoDeseado);
+            
+            console.log(formatoDeseado);
+        }
+        
+        // Crear texto para copiar (sin comillas, solo por líneas)
+        const textoParaTerminal = despachos.join('\n');
+        
+        // Crear un elemento de texto para facilitar la copia
+        const areaTexto = document.createElement('textarea');
+        areaTexto.value = textoParaTerminal;
+        areaTexto.style.position = 'fixed';
+        areaTexto.style.top = '10px';
+        areaTexto.style.left = '10px';
+        areaTexto.style.width = '500px';
+        areaTexto.style.height = '300px';
+        areaTexto.style.zIndex = '10000';
+        document.body.appendChild(areaTexto);
+        
+        // Seleccionar el texto automáticamente
+        areaTexto.select();
+        
+        console.log('\n📋 Los datos se han copiado a un área de texto en la página.');
+        console.log('Puedes copiarlos con Ctrl+C y pegarlos directamente en tu terminal.');
+        
+        return despachos;
+        
+    } catch (error) {
+        console.error('Error al extraer datos:', error);
+        return [];
+    }
+};
+
+// Función para ejecutar con un botón en la página
+const crearBotonExtraccion = () => {
+    // Verificar si el botón ya existe
+    if (document.getElementById('boton-extraer-despachos')) {
+        return;
+    }
+    
+    // Crear botón
+    const boton = document.createElement('button');
+    boton.id = 'boton-extraer-despachos';
+    boton.textContent = 'Extraer Despachos';
+    boton.style.position = 'fixed';
+    boton.style.top = '10px';
+    boton.style.right = '10px';
+    boton.style.zIndex = '10000';
+    boton.style.padding = '10px';
+    boton.style.backgroundColor = '#4CAF50';
+    boton.style.color = 'white';
+    boton.style.border = 'none';
+    boton.style.borderRadius = '4px';
+    boton.style.cursor = 'pointer';
+    
+    // Añadir evento al botón
+    boton.addEventListener('click', extraerDespachos);
+    
+    // Añadir botón a la página
+    document.body.appendChild(boton);
+    
+    console.log('✅ Botón de extracción añadido a la página');
+};
+
+// Ejecutar cuando la página cargue
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', crearBotonExtraccion);
+} else {
+    crearBotonExtraccion();
+}
+
+// También puedes ejecutar directamente si prefieres
+// extraerDespachos();
